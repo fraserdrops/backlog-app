@@ -1,7 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { RouterProvider, createBrowserRouter } from "react-router-dom";
-import App from "./AppGptReqOne.tsx";
+import App from "./AppMeInitial.tsx";
 import "./index.css";
 
 const router = createBrowserRouter([

@@ -70,10 +70,10 @@ const backlogMachine = createMachine<Context, Event>(
             },
           },
           viewingDetails: {
+            tags: ["detailsReady"],
             initial: "idle",
             states: {
               idle: {
-                tags: ["detailsReady"],
                 on: {
                   UPDATE_TITLE: "updatingTitle",
                 },
@@ -164,7 +164,7 @@ const backlogMachine = createMachine<Context, Event>(
         // Mock API call
         return new Promise((resolve, reject) => {
           setTimeout(() => {
-            reject("Error");
+            // reject("Error");
             resolve(mockTicketList);
           }, 1000); // Simulate network delay
         });
@@ -173,7 +173,7 @@ const backlogMachine = createMachine<Context, Event>(
         // Mock API call
         return new Promise((resolve, reject) => {
           setTimeout(() => {
-            reject("Error");
+            // reject("Error");
             resolve(
               ctx.selectedTicketId
                 ? mockTicketDetails[ctx.selectedTicketId]
@@ -187,10 +187,6 @@ const backlogMachine = createMachine<Context, Event>(
         return new Promise((resolve) => {
           setTimeout(() => {
             // reject("Error");
-            console.log("UPDATEING", {
-              ...mockTicketDetails[ctx.selectedTicketId],
-              title: event.title,
-            });
             resolve(
               ctx.selectedTicketId
                 ? {
@@ -240,15 +236,15 @@ const App: React.FC = () => {
     listState = "ready";
   }
 
-  let sidebarState: UIState = "ready";
+  let sidebarState: UIState = "inactive";
   if (current.hasTag("detailsLoading")) {
     sidebarState = "loading";
   }
   if (current.hasTag("detailsError")) {
     sidebarState = "error";
   }
-  if (current.hasTag("sidebarClosed")) {
-    sidebarState = "inactive";
+  if (current.hasTag("detailsReady")) {
+    sidebarState = "ready";
   }
 
   console.log("sidebarstate", sidebarState, current.tags);
@@ -273,8 +269,6 @@ const App: React.FC = () => {
       onRetryLoadList={() => send("RETRY_LOAD_LIST")}
     />
   );
-
-  return null;
 };
 
 export default App;
