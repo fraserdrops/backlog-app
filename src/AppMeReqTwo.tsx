@@ -176,7 +176,9 @@ const backlogMachine = createMachine<Context, Events>(
               },
             },
             states: {
-              idle: {},
+              idle: {
+                on: {},
+              },
               loading: {
                 tags: ["detailsLoading"],
               },
@@ -379,6 +381,7 @@ const Backlog: React.FC<BacklogProps> = ({
           tickets={tickets}
           onSelectTicket={onSelectTicket}
           onRetryLoadList={onRetryLoadList}
+          onUpdateTitle={onUpdateTitle}
         />
         {sidebarState === "loading" && (
           <TicketDetailSidebar
@@ -414,6 +417,7 @@ interface BacklogListProps {
   tickets: Ticket[];
   onSelectTicket: (id: string) => void;
   onRetryLoadList: () => void;
+  onUpdateTitle: (newTitle: string) => void;
 }
 
 const BacklogList: React.FC<BacklogListProps> = ({
@@ -421,6 +425,7 @@ const BacklogList: React.FC<BacklogListProps> = ({
   tickets,
   onSelectTicket,
   onRetryLoadList,
+  onUpdateTitle,
 }) => {
   if (listState === "loading") {
     return <div>Loading...</div>;
@@ -437,15 +442,37 @@ const BacklogList: React.FC<BacklogListProps> = ({
   return (
     <ul>
       {tickets.map((ticket) => (
-        <li
-          key={ticket.id}
-          style={{ cursor: "pointer" }}
-          onClick={() => onSelectTicket(ticket.id)}
-        >
-          {ticket.title} - {ticket.id}
-        </li>
+        <BacklogListItem
+          ticket={ticket}
+          onSelectTicket={onSelectTicket}
+          onUpdateTitle={onUpdateTitle}
+        />
       ))}
     </ul>
+  );
+};
+
+const BacklogListItem: React.FC<{
+  ticket: Ticket;
+  onSelectTicket: (id: string) => void;
+  onUpdateTitle: (newTitle: string) => void;
+}> = ({ ticket, onSelectTicket, onUpdateTitle }) => {
+  const [draftTitle, setDraftTitle] = useState(ticket?.title || "");
+  return (
+    <li>
+      <input
+        value={draftTitle}
+        onChange={(e) => setDraftTitle(e.target.value)}
+      />{" "}
+      -{" "}
+      <div
+        style={{ cursor: "pointer" }}
+        onClick={() => onSelectTicket(ticket.id)}
+      >
+        {ticket.id}{" "}
+      </div>
+      <button onClick={() => onUpdateTitle(draftTitle)}>Save</button>
+    </li>
   );
 };
 // Ticket detail sidebar component

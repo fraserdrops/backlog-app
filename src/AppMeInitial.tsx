@@ -166,19 +166,16 @@ const backlogMachine = createMachine<Context, Events>(
               __internal__DETAILS_LOAD_SUCCESS: ".ready",
               __internal__DETAILS_LOAD_ERROR: ".error",
               CLOSE_DETAILS: ".idle",
+              SELECT_TICKET: {
+                target: ".loading",
+                actions: [
+                  "setSelectedTicketId",
+                  raise("__internal__START_LOADING_DETAILS"),
+                ],
+              },
             },
             states: {
-              idle: {
-                on: {
-                  SELECT_TICKET: {
-                    target: "loading",
-                    actions: [
-                      "setSelectedTicketId",
-                      raise("__internal__START_LOADING_DETAILS"),
-                    ],
-                  },
-                },
-              },
+              idle: {},
               loading: {
                 tags: ["detailsLoading"],
               },
