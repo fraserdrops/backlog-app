@@ -187,10 +187,16 @@ const backlogMachine = createMachine<Context, Event>(
         return new Promise((resolve) => {
           setTimeout(() => {
             // reject("Error");
+            if (event.id && mockTicketDetails[event.id]) {
+              mockTicketDetails[event.id] = {
+                ...mockTicketDetails[event.id],
+                title: event.title,
+              };
+            }
             resolve(
-              ctx.selectedTicketId
+              event.id
                 ? {
-                    ...mockTicketDetails[ctx.selectedTicketId],
+                    ...mockTicketDetails[event.id],
                     title: event.title,
                   }
                 : { id: "", title: "", description: "" }

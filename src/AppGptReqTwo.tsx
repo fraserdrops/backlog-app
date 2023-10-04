@@ -38,6 +38,31 @@ const backlogMachine = createMachine<Context, Event>(
     },
     type: "parallel",
     states: {
+      updateTicket: {
+        initial: "idle",
+        states: {
+          idle: {
+            on: {
+              UPDATE_TITLE: "updatingTitle",
+            },
+          },
+          updatingTitle: {
+            entry: [() => console.log("updatingTitle")],
+            invoke: {
+              id: "updateTicketTitle",
+              src: "updateTicketService",
+              onDone: {
+                target: "idle",
+                actions: "updateTicketDetails",
+              },
+              onError: {
+                // target: "#error",
+                actions: ["setErrorData"],
+              },
+            },
+          },
+        },
+      },
       details: {
         on: {
           SELECT_TICKET: {
@@ -71,28 +96,6 @@ const backlogMachine = createMachine<Context, Event>(
           },
           viewingDetails: {
             tags: ["detailsReady"],
-            initial: "idle",
-            states: {
-              idle: {
-                on: {
-                  UPDATE_TITLE: "updatingTitle",
-                },
-              },
-              updatingTitle: {
-                invoke: {
-                  id: "updateTicketTitle",
-                  src: "updateTicketService",
-                  onDone: {
-                    target: "idle",
-                    actions: "updateTicketDetails",
-                  },
-                  onError: {
-                    // target: "#error",
-                    actions: ["setErrorData"],
-                  },
-                },
-              },
-            },
           },
           error: {
             tags: ["detailsError"],
@@ -146,12 +149,14 @@ const backlogMachine = createMachine<Context, Event>(
         selectedTicket: (_, event) => event.data,
       }),
       updateTicketDetails: assign({
-        tickets: (context, event) =>
-          context.tickets.map((ticket) =>
+        tickets: (context, event) => {
+          console.log("UPDATE TICKET DETAILS", event);
+          return context.tickets.map((ticket) =>
             ticket.id === event.data.id
               ? { ...ticket, title: event.data.title }
               : ticket
-          ),
+          );
+        },
       }),
       setLoadedTickets: assign({ tickets: (_, event) => event.data }),
       setSelectedTicketId: assign({
@@ -187,10 +192,16 @@ const backlogMachine = createMachine<Context, Event>(
         return new Promise((resolve) => {
           setTimeout(() => {
             // reject("Error");
+            if (event.id && mockTicketDetails[event.id]) {
+              mockTicketDetails[event.id] = {
+                ...mockTicketDetails[event.id],
+                title: event.title,
+              };
+            }
             resolve(
-              ctx.selectedTicketId
+              event.id
                 ? {
-                    ...mockTicketDetails[ctx.selectedTicketId],
+                    ...mockTicketDetails[event.id],
                     title: event.title,
                   }
                 : { id: "", title: "", description: "" }
@@ -259,10 +270,10 @@ const App: React.FC = () => {
       selectedTicket={current.context.selectedTicket}
       error={Boolean(current.context.error)}
       onRetryLoadDetails={() => send("RETRY_LOAD_DETAILS")}
-      onUpdateTitle={(title) =>
+      onUpdateTitle={(title, id) =>
         send({
           type: "UPDATE_TITLE",
-          id: current.context.selectedTicketId || "",
+          id,
           title,
         })
       }
@@ -288,7 +299,7 @@ interface BacklogProps {
   error?: boolean;
   onRetryLoadDetails: () => void;
   onCloseSidebar: () => void;
-  onUpdateTitle: (newTitle: string) => void;
+  onUpdateTitle: (title: string, id: string) => void;
   onRetryLoadList: () => void;
 }
 
@@ -321,6 +332,7 @@ const Backlog: React.FC<BacklogProps> = ({
           tickets={tickets}
           onSelectTicket={onSelectTicket}
           onRetryLoadList={onRetryLoadList}
+          onUpdateTitle={onUpdateTitle}
         />
         {sidebarState === "loading" && (
           <TicketDetailSidebar
@@ -356,6 +368,7 @@ interface BacklogListProps {
   tickets: Ticket[];
   onSelectTicket: (id: string) => void;
   onRetryLoadList: () => void;
+  onUpdateTitle: (title: string, id: string) => void;
 }
 
 const BacklogList: React.FC<BacklogListProps> = ({
@@ -363,6 +376,7 @@ const BacklogList: React.FC<BacklogListProps> = ({
   tickets,
   onSelectTicket,
   onRetryLoadList,
+  onUpdateTitle,
 }) => {
   if (listState === "loading") {
     return <div>Loading...</div>;
@@ -379,13 +393,12 @@ const BacklogList: React.FC<BacklogListProps> = ({
   return (
     <ul>
       {tickets.map((ticket) => (
-        <li
+        <BacklogListItem
           key={ticket.id}
-          style={{ cursor: "pointer" }}
-          onClick={() => onSelectTicket(ticket.id)}
-        >
-          {ticket.title} - {ticket.id}
-        </li>
+          ticket={ticket}
+          onSelectTicket={onSelectTicket}
+          onUpdateTitle={onUpdateTitle}
+        />
       ))}
     </ul>
   );
@@ -394,17 +407,23 @@ const BacklogList: React.FC<BacklogListProps> = ({
 const BacklogListItem: React.FC<{
   ticket: Ticket;
   onSelectTicket: (id: string) => void;
-  onUpdateTitle: (newTitle: string) => void;
+  onUpdateTitle: (title: string, id: string) => void;
 }> = ({ ticket, onSelectTicket, onUpdateTitle }) => {
   const [draftTitle, setDraftTitle] = useState(ticket?.title || "");
   return (
-    <li style={{ cursor: "pointer" }} onClick={() => onSelectTicket(ticket.id)}>
+    <li>
       <input
         value={draftTitle}
         onChange={(e) => setDraftTitle(e.target.value)}
       />{" "}
-      - {ticket.id}{" "}
-      <button onClick={() => onUpdateTitle(draftTitle)}>Save</button>
+      -{" "}
+      <div
+        style={{ cursor: "pointer" }}
+        onClick={() => onSelectTicket(ticket.id)}
+      >
+        {ticket.id}{" "}
+      </div>
+      <button onClick={() => onUpdateTitle(draftTitle, ticket.id)}>Save</button>
     </li>
   );
 };
@@ -415,7 +434,7 @@ interface TicketDetailSidebarProps {
   error?: boolean;
   onRetryLoadDetails: () => void;
   onCloseSidebar: () => void;
-  onUpdateTitle: (newTitle: string) => void;
+  onUpdateTitle: (title: string, id: string) => void;
 }
 
 const TicketDetailSidebar: React.FC<TicketDetailSidebarProps> = ({
@@ -451,7 +470,7 @@ const TicketDetailSidebar: React.FC<TicketDetailSidebarProps> = ({
   return (
     <SidebarContainer onCloseSidebar={onCloseSidebar}>
       <input value={tempValue} onChange={(e) => setTempValue(e.target.value)} />
-      <button onClick={() => onUpdateTitle(tempValue)}>Save</button>
+      <button onClick={() => onUpdateTitle(tempValue, ticket.id)}>Save</button>
       <p>{ticket.description}</p>
     </SidebarContainer>
   );
