@@ -47,17 +47,12 @@ const backlogMachine = createMachine<Context, Event>(
             },
           },
           updatingTitle: {
-            entry: [() => console.log("updatingTitle")],
             invoke: {
               id: "updateTicketTitle",
               src: "updateTicketService",
               onDone: {
                 target: "idle",
                 actions: "updateTicketDetails",
-              },
-              onError: {
-                // target: "#error",
-                actions: ["setErrorData"],
               },
             },
           },
@@ -150,13 +145,13 @@ const backlogMachine = createMachine<Context, Event>(
       }),
       updateTicketDetails: assign({
         tickets: (context, event) => {
-          console.log("UPDATE TICKET DETAILS", event);
           return context.tickets.map((ticket) =>
             ticket.id === event.data.id
               ? { ...ticket, title: event.data.title }
               : ticket
           );
         },
+        selectedTicket: (ctx, event) => event.data,
       }),
       setLoadedTickets: assign({ tickets: (_, event) => event.data }),
       setSelectedTicketId: assign({
@@ -169,7 +164,7 @@ const backlogMachine = createMachine<Context, Event>(
         // Mock API call
         return new Promise((resolve, reject) => {
           setTimeout(() => {
-            // reject("Error");
+            reject("Error");
             resolve(mockTicketList);
           }, 1000); // Simulate network delay
         });
@@ -178,7 +173,7 @@ const backlogMachine = createMachine<Context, Event>(
         // Mock API call
         return new Promise((resolve, reject) => {
           setTimeout(() => {
-            // reject("Error");
+            reject("Error");
             resolve(
               ctx.selectedTicketId
                 ? mockTicketDetails[ctx.selectedTicketId]
@@ -274,7 +269,6 @@ const App: React.FC = () => {
       listState={listState}
       sidebarState={sidebarState}
       selectedTicket={current.context.selectedTicket}
-      error={Boolean(current.context.error)}
       onRetryLoadDetails={() => send("RETRY_LOAD_DETAILS")}
       onUpdateTitle={(title, id) =>
         send({
@@ -302,7 +296,6 @@ interface BacklogProps {
   sidebarState: UIState;
   listState: UIState;
   selectedTicket?: Ticket;
-  error?: boolean;
   onRetryLoadDetails: () => void;
   onCloseSidebar: () => void;
   onUpdateTitle: (title: string, id: string) => void;
@@ -318,6 +311,7 @@ const Backlog: React.FC<BacklogProps> = ({
   onRetryLoadList,
   onUpdateTitle,
   listState,
+  selectedTicket,
 }) => {
   return (
     <div
@@ -343,6 +337,7 @@ const Backlog: React.FC<BacklogProps> = ({
           onCloseSidebar={onCloseSidebar}
           onRetryLoadDetails={onRetryLoadDetails}
           onUpdateTitle={onUpdateTitle}
+          ticket={selectedTicket}
         />
       </div>
     </div>
@@ -400,6 +395,9 @@ const BacklogListItem: React.FC<{
   onUpdateTitle: (title: string, id: string) => void;
 }> = ({ ticket, onSelectTicket, onUpdateTitle }) => {
   const [draftTitle, setDraftTitle] = useState(ticket?.title || "");
+  useEffect(() => {
+    setDraftTitle(ticket?.title || "");
+  }, [ticket?.title]);
   return (
     <li>
       <input
@@ -420,9 +418,6 @@ const BacklogListItem: React.FC<{
 // Ticket detail sidebar component
 interface TicketDetailSidebarProps {
   ticket?: Ticket;
-  isLoading?: boolean;
-  error?: boolean;
-  errorRetrying?: boolean;
   onRetryLoadDetails: () => void;
   onCloseSidebar: () => void;
   onUpdateTitle: (title: string, id: string) => void;
@@ -437,6 +432,14 @@ const TicketDetailSidebar: React.FC<TicketDetailSidebarProps> = ({
   onUpdateTitle,
 }) => {
   const [tempValue, setTempValue] = useState(ticket?.title || "");
+  useEffect(() => {
+    setTempValue(ticket?.title || "");
+  }, [ticket?.title]);
+
+  if (sidebarState === "inactive") {
+    return null;
+  }
+
   if (sidebarState === "loading") {
     return (
       <SidebarContainer onCloseSidebar={onCloseSidebar}>

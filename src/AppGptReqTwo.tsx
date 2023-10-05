@@ -47,17 +47,12 @@ const backlogMachine = createMachine<Context, Event>(
             },
           },
           updatingTitle: {
-            entry: [() => console.log("updatingTitle")],
             invoke: {
               id: "updateTicketTitle",
               src: "updateTicketService",
               onDone: {
                 target: "idle",
                 actions: "updateTicketDetails",
-              },
-              onError: {
-                // target: "#error",
-                actions: ["setErrorData"],
               },
             },
           },
@@ -150,13 +145,13 @@ const backlogMachine = createMachine<Context, Event>(
       }),
       updateTicketDetails: assign({
         tickets: (context, event) => {
-          console.log("UPDATE TICKET DETAILS", event);
           return context.tickets.map((ticket) =>
             ticket.id === event.data.id
               ? { ...ticket, title: event.data.title }
               : ticket
           );
         },
+        selectedTicket: (ctx, event) => event.data,
       }),
       setLoadedTickets: assign({ tickets: (_, event) => event.data }),
       setSelectedTicketId: assign({
@@ -212,7 +207,6 @@ const backlogMachine = createMachine<Context, Event>(
     },
   }
 );
-
 const mockTicketDetails: Record<string, Ticket> = {
   id1: { id: "id1", title: "Ticket 1", description: "Ticket 1 description..." },
   id2: { id: "id2", title: "Ticket 2", description: "Ticket 2 description..." },
@@ -246,6 +240,9 @@ const App: React.FC = () => {
   if (current.hasTag("listReady")) {
     listState = "ready";
   }
+  if (current.hasTag("listErrorRetrying")) {
+    listState = "errorRetrying";
+  }
 
   let sidebarState: UIState = "inactive";
   if (current.hasTag("detailsLoading")) {
@@ -258,6 +255,10 @@ const App: React.FC = () => {
     sidebarState = "ready";
   }
 
+  if (current.hasTag("detailsErrorRetrying")) {
+    sidebarState = "errorRetrying";
+  }
+
   console.log("sidebarstate", sidebarState, current.tags);
 
   return (
@@ -268,7 +269,6 @@ const App: React.FC = () => {
       listState={listState}
       sidebarState={sidebarState}
       selectedTicket={current.context.selectedTicket}
-      error={Boolean(current.context.error)}
       onRetryLoadDetails={() => send("RETRY_LOAD_DETAILS")}
       onUpdateTitle={(title, id) =>
         send({
@@ -289,14 +289,13 @@ interface Ticket {
   title: string;
   description?: string; // This property is optional as it may not be present in all tickets, especially in the backlog list
 }
-type UIState = "inactive" | "loading" | "ready" | "error";
+type UIState = "inactive" | "loading" | "ready" | "error" | "errorRetrying";
 interface BacklogProps {
   tickets: Ticket[];
   onSelectTicket: (id: string) => void;
   sidebarState: UIState;
   listState: UIState;
   selectedTicket?: Ticket;
-  error?: boolean;
   onRetryLoadDetails: () => void;
   onCloseSidebar: () => void;
   onUpdateTitle: (title: string, id: string) => void;
@@ -308,12 +307,11 @@ const Backlog: React.FC<BacklogProps> = ({
   onSelectTicket,
   onCloseSidebar,
   sidebarState,
-  selectedTicket,
-  error,
   onRetryLoadDetails,
   onRetryLoadList,
   onUpdateTitle,
   listState,
+  selectedTicket,
 }) => {
   return (
     <div
@@ -334,30 +332,13 @@ const Backlog: React.FC<BacklogProps> = ({
           onRetryLoadList={onRetryLoadList}
           onUpdateTitle={onUpdateTitle}
         />
-        {sidebarState === "loading" && (
-          <TicketDetailSidebar
-            onCloseSidebar={onCloseSidebar}
-            isLoading
-            onRetryLoadDetails={onRetryLoadDetails}
-            onUpdateTitle={onUpdateTitle}
-          />
-        )}
-        {sidebarState === "ready" && (
-          <TicketDetailSidebar
-            onCloseSidebar={onCloseSidebar}
-            ticket={selectedTicket}
-            onRetryLoadDetails={onRetryLoadDetails}
-            onUpdateTitle={onUpdateTitle}
-          />
-        )}
-        {sidebarState === "error" && (
-          <TicketDetailSidebar
-            onCloseSidebar={onCloseSidebar}
-            error={error}
-            onRetryLoadDetails={onRetryLoadDetails}
-            onUpdateTitle={onUpdateTitle}
-          />
-        )}
+        <TicketDetailSidebar
+          sidebarState={sidebarState}
+          onCloseSidebar={onCloseSidebar}
+          onRetryLoadDetails={onRetryLoadDetails}
+          onUpdateTitle={onUpdateTitle}
+          ticket={selectedTicket}
+        />
       </div>
     </div>
   );
@@ -390,6 +371,10 @@ const BacklogList: React.FC<BacklogListProps> = ({
       </div>
     );
   }
+
+  if (listState === "errorRetrying") {
+    return <div>Error loading list...retrying</div>;
+  }
   return (
     <ul>
       {tickets.map((ticket) => (
@@ -410,6 +395,9 @@ const BacklogListItem: React.FC<{
   onUpdateTitle: (title: string, id: string) => void;
 }> = ({ ticket, onSelectTicket, onUpdateTitle }) => {
   const [draftTitle, setDraftTitle] = useState(ticket?.title || "");
+  useEffect(() => {
+    setDraftTitle(ticket?.title || "");
+  }, [ticket?.title]);
   return (
     <li>
       <input
@@ -430,23 +418,29 @@ const BacklogListItem: React.FC<{
 // Ticket detail sidebar component
 interface TicketDetailSidebarProps {
   ticket?: Ticket;
-  isLoading?: boolean;
-  error?: boolean;
   onRetryLoadDetails: () => void;
   onCloseSidebar: () => void;
   onUpdateTitle: (title: string, id: string) => void;
+  sidebarState: UIState;
 }
 
 const TicketDetailSidebar: React.FC<TicketDetailSidebarProps> = ({
   ticket,
-  isLoading,
-  error,
+  sidebarState,
   onRetryLoadDetails,
   onCloseSidebar,
   onUpdateTitle,
 }) => {
   const [tempValue, setTempValue] = useState(ticket?.title || "");
-  if (isLoading) {
+  useEffect(() => {
+    setTempValue(ticket?.title || "");
+  }, [ticket?.title]);
+
+  if (sidebarState === "inactive") {
+    return null;
+  }
+
+  if (sidebarState === "loading") {
     return (
       <SidebarContainer onCloseSidebar={onCloseSidebar}>
         <div>Loading ticket details...</div>{" "}
@@ -454,11 +448,19 @@ const TicketDetailSidebar: React.FC<TicketDetailSidebarProps> = ({
     );
   }
 
-  if (error) {
+  if (sidebarState === "error") {
     return (
       <SidebarContainer onCloseSidebar={onCloseSidebar}>
         Error loading ticket details{" "}
         <button onClick={onRetryLoadDetails}>Retry</button>
+      </SidebarContainer>
+    );
+  }
+
+  if (sidebarState === "errorRetrying") {
+    return (
+      <SidebarContainer onCloseSidebar={onCloseSidebar}>
+        Error loading ticket details...retrying
       </SidebarContainer>
     );
   }

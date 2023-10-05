@@ -15,7 +15,6 @@ interface Ticket {
 
 interface Context {
   tickets: Ticket[];
-  error: string;
   selectedTicket?: Ticket;
   selectedTicketId?: string;
 }
@@ -40,7 +39,6 @@ const backlogMachine = createMachine<Context, Events>(
     initial: "idle",
     context: {
       tickets: [],
-      error: "",
       selectedTicket: undefined,
       selectedTicketId: undefined,
     },
@@ -54,7 +52,6 @@ const backlogMachine = createMachine<Context, Events>(
             states: {
               idle: {
                 on: {
-                  LOAD_LIST: "loading",
                   __internal__START_LOADING_LIST: "loading",
                 },
               },
@@ -71,10 +68,7 @@ const backlogMachine = createMachine<Context, Events>(
                   },
                   onError: {
                     target: "idle",
-                    actions: [
-                      "setErrorData",
-                      raise("__internal__LIST_LOAD_ERROR"),
-                    ],
+                    actions: [raise("__internal__LIST_LOAD_ERROR")],
                   },
                 },
               },
@@ -103,10 +97,7 @@ const backlogMachine = createMachine<Context, Events>(
                   },
                   onError: {
                     target: "idle",
-                    actions: [
-                      "setErrorData",
-                      raise("__internal__DETAILS_LOAD_ERROR"),
-                    ],
+                    actions: [raise("__internal__DETAILS_LOAD_ERROR")],
                   },
                 },
               },
@@ -138,12 +129,20 @@ const backlogMachine = createMachine<Context, Events>(
         type: "parallel",
         states: {
           list: {
-            initial: "loading",
+            initial: "idle",
             on: {
               __internal__LIST_LOAD_SUCCESS: ".ready",
               __internal__LIST_LOAD_ERROR: ".error",
             },
             states: {
+              idle: {
+                on: {
+                  LOAD_LIST: {
+                    target: "loading",
+                    actions: [raise("__internal__START_LOADING_LIST")],
+                  },
+                },
+              },
               loading: {
                 tags: ["listLoading"],
               },
@@ -226,12 +225,12 @@ const backlogMachine = createMachine<Context, Events>(
               ? { ...ticket, title: event.data.title }
               : ticket
           ),
+        selectedTicket: (ctx, event) => event.data,
       }),
       setLoadedTickets: assign({ tickets: (_, event) => event.data }),
       setSelectedTicketId: assign({
         selectedTicketId: (_, event) => event.id,
       }),
-      setErrorData: assign({ error: (_, event) => event.data }),
     },
     services: {
       loadBacklogService: (context): Promise<Ticket[]> => {
@@ -247,7 +246,7 @@ const backlogMachine = createMachine<Context, Events>(
         // Mock API call
         return new Promise((resolve, reject) => {
           setTimeout(() => {
-            reject("Error");
+            // reject("Error");
             resolve(
               ctx.selectedTicketId
                 ? mockTicketDetails[ctx.selectedTicketId]
@@ -281,7 +280,6 @@ const backlogMachine = createMachine<Context, Events>(
     },
   }
 );
-
 const mockTicketDetails: Record<string, Ticket> = {
   id1: { id: "id1", title: "Ticket 1", description: "Ticket 1 description..." },
   id2: { id: "id2", title: "Ticket 2", description: "Ticket 2 description..." },
@@ -344,7 +342,6 @@ const App: React.FC = () => {
       listState={listState}
       sidebarState={sidebarState}
       selectedTicket={current.context.selectedTicket}
-      error={Boolean(current.context.error)}
       onRetryLoadDetails={() => send("RETRY_LOAD_DETAILS")}
       onUpdateTitle={(title, id) =>
         send({
@@ -372,7 +369,6 @@ interface BacklogProps {
   sidebarState: UIState;
   listState: UIState;
   selectedTicket?: Ticket;
-  error?: boolean;
   onRetryLoadDetails: () => void;
   onCloseSidebar: () => void;
   onUpdateTitle: (title: string, id: string) => void;
@@ -388,6 +384,7 @@ const Backlog: React.FC<BacklogProps> = ({
   onRetryLoadList,
   onUpdateTitle,
   listState,
+  selectedTicket,
 }) => {
   return (
     <div
@@ -413,6 +410,7 @@ const Backlog: React.FC<BacklogProps> = ({
           onCloseSidebar={onCloseSidebar}
           onRetryLoadDetails={onRetryLoadDetails}
           onUpdateTitle={onUpdateTitle}
+          ticket={selectedTicket}
         />
       </div>
     </div>
@@ -470,6 +468,9 @@ const BacklogListItem: React.FC<{
   onUpdateTitle: (title: string, id: string) => void;
 }> = ({ ticket, onSelectTicket, onUpdateTitle }) => {
   const [draftTitle, setDraftTitle] = useState(ticket?.title || "");
+  useEffect(() => {
+    setDraftTitle(ticket?.title || "");
+  }, [ticket?.title]);
   return (
     <li>
       <input
@@ -490,9 +491,6 @@ const BacklogListItem: React.FC<{
 // Ticket detail sidebar component
 interface TicketDetailSidebarProps {
   ticket?: Ticket;
-  isLoading?: boolean;
-  error?: boolean;
-  errorRetrying?: boolean;
   onRetryLoadDetails: () => void;
   onCloseSidebar: () => void;
   onUpdateTitle: (title: string, id: string) => void;
@@ -507,6 +505,14 @@ const TicketDetailSidebar: React.FC<TicketDetailSidebarProps> = ({
   onUpdateTitle,
 }) => {
   const [tempValue, setTempValue] = useState(ticket?.title || "");
+  useEffect(() => {
+    setTempValue(ticket?.title || "");
+  }, [ticket?.title]);
+
+  if (sidebarState === "inactive") {
+    return null;
+  }
+
   if (sidebarState === "loading") {
     return (
       <SidebarContainer onCloseSidebar={onCloseSidebar}>
