@@ -1,10 +1,11 @@
 import { useMachine } from "@xstate/react";
 import { useEffect, useState } from "react";
-import "./App.css";
+import "../App.css";
 
 /* eslint-disable @typescript-eslint/no-unsafe-return */
 import { useSearchParams } from "react-router-dom";
 import { assign, createMachine } from "xstate";
+import { raise } from "xstate/lib/actions";
 
 interface Ticket {
   id: string;
@@ -18,17 +19,24 @@ interface Context {
   selectedTicketId?: string;
 }
 
-type Event =
+type Events =
   | { type: "LOAD_LIST" }
   | { type: "SELECT_TICKET"; id: string }
-  | { type: "UPDATE_TITLE"; id: string; title: string }
-  | { type: "CLOSE_DETAILS" }
   | { type: "RETRY_LOAD_DETAILS" }
-  | { type: "RETRY_LOAD_LIST" };
+  | { type: "RETRY_LOAD_LIST" }
+  | { type: "CLOSE_DETAILS" }
+  | { type: "UPDATE_TITLE"; id: string; title: string }
+  | { type: "__internal__LIST_LOAD_SUCCESS" }
+  | { type: "__internal__LIST_LOAD_ERROR" }
+  | { type: "__internal__DETAILS_LOAD_SUCCESS" }
+  | { type: "__internal__DETAILS_LOAD_ERROR" }
+  | { type: "__internal__START_LOADING_DETAILS" }
+  | { type: "__internal__START_LOADING_LIST" };
 
-const backlogMachine = createMachine<Context, Event>(
+const backlogMachine = createMachine<Context, Events>(
   {
     id: "backlog",
+    initial: "idle",
     context: {
       tickets: [],
       selectedTicket: undefined,
@@ -36,46 +44,74 @@ const backlogMachine = createMachine<Context, Event>(
     },
     type: "parallel",
     states: {
-      details: {
-        on: {
-          SELECT_TICKET: {
-            target: ".loading",
-            actions: ["setSelectedTicketId"],
-          },
-          CLOSE_DETAILS: {
-            target: ".idle",
-            internal: false,
-          },
-        },
-        initial: "idle",
+      core: {
+        type: "parallel",
         states: {
-          idle: {
-            tags: ["sidebarClosed"],
-          },
-          loading: {
-            tags: ["detailsLoading"],
-            invoke: {
-              id: "loadTicketDetail",
-              src: "loadTicketDetailService",
-              onDone: {
-                target: "viewingDetails",
-                actions: ["setSelectedTicket"],
-              },
-              onError: {
-                target: "error",
-              },
-            },
-          },
-          viewingDetails: {
-            tags: ["detailsReady"],
+          loadBacklog: {
             initial: "idle",
             states: {
               idle: {
                 on: {
-                  UPDATE_TITLE: "updatingTitle",
+                  __internal__START_LOADING_LIST: "loading",
                 },
               },
-              updatingTitle: {
+              loading: {
+                invoke: {
+                  id: "loadBacklog",
+                  src: "loadBacklogService",
+                  onDone: {
+                    target: "idle",
+                    actions: [
+                      "setLoadedTickets",
+                      raise("__internal__LIST_LOAD_SUCCESS"),
+                    ],
+                  },
+                  onError: {
+                    target: "idle",
+                    actions: [raise("__internal__LIST_LOAD_ERROR")],
+                  },
+                },
+              },
+            },
+          },
+          loadDetails: {
+            initial: "idle",
+            states: {
+              idle: {
+                on: {
+                  __internal__START_LOADING_DETAILS: {
+                    target: "loading",
+                  },
+                },
+              },
+              loading: {
+                invoke: {
+                  id: "loadTicketDetail",
+                  src: "loadTicketDetailService",
+                  onDone: {
+                    target: "idle",
+                    actions: [
+                      "setSelectedTicket",
+                      raise("__internal__DETAILS_LOAD_SUCCESS"),
+                    ],
+                  },
+                  onError: {
+                    target: "idle",
+                    actions: [raise("__internal__DETAILS_LOAD_ERROR")],
+                  },
+                },
+              },
+            },
+          },
+          updateDetails: {
+            initial: "idle",
+            states: {
+              idle: {
+                on: {
+                  UPDATE_TITLE: "updatingDetails",
+                },
+              },
+              updatingDetails: {
                 invoke: {
                   id: "updateTicketTitle",
                   src: "updateTicketService",
@@ -87,45 +123,74 @@ const backlogMachine = createMachine<Context, Event>(
               },
             },
           },
-          error: {
-            tags: ["detailsError"],
-            on: {
-              RETRY_LOAD_DETAILS: "loading",
-            },
-          },
         },
       },
-      list: {
-        initial: "idle",
+      view: {
+        type: "parallel",
         states: {
-          idle: {
+          list: {
+            initial: "idle",
             on: {
-              LOAD_LIST: "loading",
+              __internal__LIST_LOAD_SUCCESS: ".ready",
+              __internal__LIST_LOAD_ERROR: ".error",
+            },
+            states: {
+              idle: {
+                on: {
+                  LOAD_LIST: {
+                    target: "loading",
+                    actions: [raise("__internal__START_LOADING_LIST")],
+                  },
+                },
+              },
+              loading: {
+                tags: ["listLoading"],
+              },
+              ready: {
+                tags: ["listReady"],
+              },
+              error: {
+                tags: ["listError"],
+                on: {
+                  RETRY_LOAD_LIST: {
+                    target: "loading",
+                    actions: [raise("__internal__START_LOADING_LIST")],
+                  },
+                },
+              },
             },
           },
-          loading: {
-            tags: ["listLoading"],
-            invoke: {
-              id: "loadBacklog",
-              src: "loadBacklogService",
-              onDone: {
-                target: "listReady",
-                actions: ["setLoadedTickets"],
-              },
-              onError: {
-                target: "error",
+          details: {
+            initial: "idle",
+            on: {
+              __internal__DETAILS_LOAD_SUCCESS: ".ready",
+              __internal__DETAILS_LOAD_ERROR: ".error",
+              CLOSE_DETAILS: ".idle",
+              SELECT_TICKET: {
+                target: ".loading",
+                actions: [
+                  "setSelectedTicketId",
+                  raise("__internal__START_LOADING_DETAILS"),
+                ],
               },
             },
-          },
-          listReady: {
-            id: "listReady",
-            tags: ["listReady"],
-          },
-          error: {
-            id: "error",
-            tags: ["listError"],
-            on: {
-              RETRY_LOAD_LIST: "loading",
+            states: {
+              idle: {},
+              loading: {
+                tags: ["detailsLoading"],
+              },
+              ready: {
+                tags: ["detailsReady"],
+              },
+              error: {
+                tags: ["detailsError"],
+                on: {
+                  RETRY_LOAD_DETAILS: {
+                    target: "loading",
+                    actions: [raise("__internal__START_LOADING_DETAILS")],
+                  },
+                },
+              },
             },
           },
         },

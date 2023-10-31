@@ -1,6 +1,6 @@
 import { useMachine } from "@xstate/react";
 import { useEffect, useState } from "react";
-import "./App.css";
+import "../App.css";
 
 /* eslint-disable @typescript-eslint/no-unsafe-return */
 import { useSearchParams } from "react-router-dom";
@@ -164,7 +164,7 @@ const backlogMachine = createMachine<Context, Event>(
         // Mock API call
         return new Promise((resolve, reject) => {
           setTimeout(() => {
-            // reject("Error");
+            reject("Error");
             resolve(mockTicketList);
           }, 1000); // Simulate network delay
         });
@@ -173,7 +173,7 @@ const backlogMachine = createMachine<Context, Event>(
         // Mock API call
         return new Promise((resolve, reject) => {
           setTimeout(() => {
-            // reject("Error");
+            reject("Error");
             resolve(
               ctx.selectedTicketId
                 ? mockTicketDetails[ctx.selectedTicketId]

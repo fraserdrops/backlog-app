@@ -1,8 +1,9 @@
 import { useMachine } from "@xstate/react";
 import { useEffect, useState } from "react";
-import "./App.css";
+import "../App.css";
 
 /* eslint-disable @typescript-eslint/no-unsafe-return */
+import { useSearchParams } from "react-router-dom";
 import { assign, createMachine } from "xstate";
 
 interface Ticket {
@@ -28,103 +29,105 @@ type Event =
 const backlogMachine = createMachine<Context, Event>(
   {
     id: "backlog",
-    initial: "idle",
     context: {
       tickets: [],
       selectedTicket: undefined,
       selectedTicketId: undefined,
     },
+    type: "parallel",
     states: {
-      idle: {
-        on: {
-          LOAD_LIST: "loading",
-        },
-      },
-      loading: {
-        tags: ["listLoading"],
-        invoke: {
-          id: "loadBacklog",
-          src: "loadBacklogService",
-          onDone: {
-            target: "listReady",
-            actions: ["setLoadedTickets"],
-          },
-          onError: {
-            target: "#error",
-          },
-        },
-      },
-      listReady: {
-        tags: ["listReady"],
-        initial: "idle",
+      details: {
         on: {
           SELECT_TICKET: {
-            target: ".ticketDetails",
+            target: ".loading",
             actions: ["setSelectedTicketId"],
           },
           CLOSE_DETAILS: {
-            target: "#backlog.listReady",
+            target: ".idle",
             internal: false,
           },
         },
+        initial: "idle",
         states: {
-          idle: {},
-          ticketDetails: {
-            initial: "loading",
+          idle: {
+            tags: ["sidebarClosed"],
+          },
+          loading: {
+            tags: ["detailsLoading"],
+            invoke: {
+              id: "loadTicketDetail",
+              src: "loadTicketDetailService",
+              onDone: {
+                target: "viewingDetails",
+                actions: ["setSelectedTicket"],
+              },
+              onError: {
+                target: "error",
+              },
+            },
+          },
+          viewingDetails: {
+            tags: ["detailsReady"],
+            initial: "idle",
             states: {
-              loading: {
-                tags: ["detailsLoading"],
-                invoke: {
-                  id: "loadTicketDetail",
-                  src: "loadTicketDetailService",
-                  onDone: {
-                    target: "viewingDetails",
-                    actions: ["setSelectedTicket"],
-                  },
-                  onError: {
-                    target: "error",
-                  },
-                },
-              },
-              viewingDetails: {
-                initial: "idle",
-                tags: ["detailsReady"],
-                states: {
-                  idle: {
-                    on: {
-                      UPDATE_TITLE: "updatingTitle",
-                    },
-                  },
-                  updatingTitle: {
-                    invoke: {
-                      id: "updateTicketTitle",
-                      src: "updateTicketService",
-                      onDone: {
-                        target: "idle",
-                        actions: "updateTicketDetails",
-                      },
-                      onError: {
-                        target: "#error",
-                      },
-                    },
-                  },
-                },
-              },
-              error: {
-                tags: ["detailsError"],
+              idle: {
                 on: {
-                  RETRY_LOAD_DETAILS: "loading",
+                  UPDATE_TITLE: "updatingTitle",
+                },
+              },
+              updatingTitle: {
+                invoke: {
+                  id: "updateTicketTitle",
+                  src: "updateTicketService",
+                  onDone: {
+                    target: "idle",
+                    actions: "updateTicketDetails",
+                  },
                 },
               },
             },
           },
+          error: {
+            tags: ["detailsError"],
+            on: {
+              RETRY_LOAD_DETAILS: "loading",
+            },
+          },
         },
       },
-      error: {
-        id: "error",
-        tags: ["listError"],
-        on: {
-          RETRY_LOAD_LIST: "loading",
+      list: {
+        initial: "idle",
+        states: {
+          idle: {
+            on: {
+              LOAD_LIST: "loading",
+            },
+          },
+          loading: {
+            tags: ["listLoading"],
+            invoke: {
+              id: "loadBacklog",
+              src: "loadBacklogService",
+              onDone: {
+                target: "listReady",
+                actions: ["setLoadedTickets"],
+              },
+              onError: {
+                target: "error",
+              },
+            },
+          },
+          listReady: {
+            id: "listReady",
+            tags: ["listReady"],
+          },
+          error: {
+            id: "error",
+            tags: ["listError"],
+            on: {
+              RETRY_LOAD_LIST: "loading",
+            },
+          },
         },
       },
     },
@@ -209,12 +212,19 @@ const mockTicketList = Object.values(mockTicketDetails).map((ticket) => ({
 }));
 
 const App: React.FC = () => {
+  const [searchParams] = useSearchParams();
   const [current, send] = useMachine(backlogMachine);
-  console.log(current, current._event);
+  useEffect(() => {
+    const selectedId = searchParams.get("selectedId");
+    if (selectedId !== null) {
+      send({ type: "SELECT_TICKET", id: selectedId });
+    }
+  }, [searchParams, send]);
 
   useEffect(() => {
     send("LOAD_LIST");
   }, [send]);
+  console.log(current, current._event);
 
   let listState: UIState = "loading";
   if (current.hasTag("listError")) {
